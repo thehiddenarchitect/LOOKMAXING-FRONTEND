@@ -1,0 +1,119 @@
+Build a production-ready Flutter mobile app UI for an AI-powered face analysis and look-maxing application.
+
+The app is frontend-only and consumes data from an existing backend API. Do NOT implement any time-travel, virtual date, or next-day simulation logic.
+
+Core Screens & UI Requirements
+
+1. Dashboard Screen
+
+Personalized greeting using user name.
+
+Conditionally show a message:
+“Your Looks Score improved by X% this month”
+(only visible if backend sends improvement data).
+
+Current facial stats displayed as cards with progress bars:
+
+Symmetry
+
+Jawline
+
+Facial Proportions
+
+Skin Clarity
+
+Masculinity
+
+Cheekbones
+
+If no scan history exists, show example placeholder values.
+
+2. Daily Tips Section
+
+Static list of daily improvement tips (same for all users).
+
+Each tip shown as a checklist card.
+
+Clean, minimal, fitness-app style UI.
+
+3. Weekly Analysis Screen
+
+Display:
+
+Total scans completed this week
+
+Improvement percentage since last week
+
+Consistency score shown as a circular progress indicator
+
+All values are read-only and come from backend responses.
+
+4. Challenges Screen
+
+Weekly challenges displayed as cards:
+
+Drink water
+
+Sleep 8 hours
+
+Eat healthy
+
+Facial exercises
+
+Daily walking goal
+
+Walking distance value is passed from backend (no calculation in frontend).
+
+5. Scan Flow Screen
+
+Start Scan button
+
+Camera placeholder UI
+
+Scan counter indicator (e.g., 1/3, 2/3, 3/3)
+
+Simple lifestyle questions form (sleep, diet, water, exercise)
+
+“Generate My Plan” button
+
+6. Improvement Plan Screen
+
+Display overall facial score
+
+Highlight weakest areas
+
+Show recommended exercises and focus areas
+
+Clean card-based layout
+
+Design Guidelines
+
+Use Material 3 design
+
+Minimal, premium, fitness-app look
+
+No cartoonish UI
+
+Neutral colors with subtle gradients
+
+Bottom navigation bar:
+
+Home
+
+Scan
+
+Progress
+
+Profile
+
+Technical Constraints
+
+Flutter (stable)
+
+Stateless + Stateful widgets where appropriate
+
+No backend logic, no date manipulation
+
+UI must be scalable and production-ready
+
+Focus only on frontend structure, widgets, navigation, and UI state handling.

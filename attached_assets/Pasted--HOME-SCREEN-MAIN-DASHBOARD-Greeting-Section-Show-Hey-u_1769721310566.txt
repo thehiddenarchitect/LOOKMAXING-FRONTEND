@@ -1,0 +1,254 @@
+📱 HOME SCREEN (MAIN DASHBOARD)
+🔹 Greeting Section
+
+Show:
+
+Hey, {user_name}
+Let's keep your streak alive today.
+Consistency is key.
+
+
+User name fetched from /api/profile
+
+If no profile → show “Set your name” CTA
+
+🔹 Current Stats Section
+
+Display cards with progress bars:
+
+Overall Score
+
+Symmetry
+
+Jawline
+
+Skin Quality
+
+Masculinity
+
+Data source:
+
+/api/scans/latest
+
+If no scans:
+
+Show placeholders (e.g. 80–85%)
+
+Label clearly as example values
+
+📸 1. INSTANT SCAN SECTION
+
+Title:
+
+Instant Scan
+Max 3 Scans / Day
+
+
+UI:
+
+Image picker (camera + gallery)
+
+Upload status
+
+Run Analysis button
+
+API:
+
+POST /api/scans/
+
+Behavior:
+
+If scan limit reached → disable button + show backend message
+
+After success → refresh stats automatically
+
+📊 2. DAILY REPORT SECTION
+
+Title:
+
+Daily Report
+Available immediately after 1 scan
+
+
+Button:
+
+Get Daily Stats
+
+
+API:
+
+GET /api/analysis/daily
+
+UI:
+
+Category averages
+
+Progress bars
+
+Visible only after at least one scan
+
+📈 3. WEEKLY REPORT SECTION
+
+Title:
+
+Weekly Report
+
+
+Locked State:
+
+Locked until 5 days & 15 scans
+0/15 scans completed
+
+
+Unlocked State:
+
+Weekly averages
+
+Improvement %
+
+Consistency score (circular indicator)
+
+API:
+
+GET /api/analysis/weekly
+
+🕒 4. SCAN HISTORY SECTION
+
+Title:
+
+Scan History
+Your Past Records
+
+
+Button:
+
+Refresh History
+
+
+API:
+
+GET /api/scans/history
+
+UI:
+
+List of past scans
+
+Date + overall score
+
+Empty state:
+
+No history loaded.
+
+🧠 6. ACTION PLAN SECTION
+
+Title:
+
+Action Plan
+AI Generated Routine
+(Auto-unlocks at 3 scans)
+
+
+Button:
+
+Check Plan Status
+
+
+API:
+
+GET /api/plans/today
+
+GET /api/plans/weekly/current
+
+POST /api/plans/weekly/generate
+
+UI:
+
+Morning Routine
+
+4 exercises
+
+Duration + status
+
+Evening Routine
+
+10 exercises
+
+Weakness-focused
+
+Locked state shown until backend unlocks
+
+👤 5. USER PROFILE SCREEN
+
+Title:
+
+User Profile
+Manage Identity
+
+
+Fields:
+
+Name
+
+Age
+
+Buttons:
+
+Save / Update Profile
+Clear All Data
+
+
+API:
+
+POST /api/profile
+
+GET /api/profile
+
+Stats shown:
+
+Total scans
+
+Days active
+
+🧭 NAVIGATION
+
+Bottom Navigation Bar:
+
+Home
+
+Scans
+
+Plan
+
+Profile
+
+🎨 DESIGN RULES
+
+Flutter (stable)
+
+Material 3
+
+Premium fitness-style UI
+
+Clean cards
+
+No emojis in UI
+
+No fake streaks or demo counters
+
+All numbers come from API
+
+⚙️ TECH NOTES
+
+Use FutureBuilder / Riverpod / Provider
+
+Central API service class
+
+Proper loading + error states
+
+Backend controls:
+
+scan limits
+
+locks
+
+unlocks

@@ -1,0 +1,179 @@
+API Integration Mapping (IMPORTANT)
+📸 Scans
+
+POST /scans/ → Upload image & trigger face scan
+
+GET /scans/latest → Show most recent scan result
+
+GET /scans/history → Show scan history list
+
+Frontend behavior:
+
+Show scan counter (e.g. 1/3, 2/3, 3/3) based on API response
+
+If API returns limit error → show disabled scan UI with message
+
+📊 Analysis
+
+GET /analysis/daily
+
+GET /analysis/weekly
+
+Frontend behavior:
+
+Daily report → show today’s averages
+
+Weekly report:
+
+If locked → show locked UI state
+
+If unlocked → show 5-day averages, improvement %, consistency
+
+📅 Plans
+
+GET /plans/today
+
+POST /plans/weekly/generate
+
+GET /plans/weekly/current
+
+Frontend behavior:
+
+Morning routine screen → show 4 exercises from /plans/today
+
+Weekly evening routine screen:
+
+If no plan exists → show “Generate Weekly Plan” button
+
+If exists → display 10 exercises
+
+Weekly plan is read-only once active
+
+👤 Profile
+
+POST /profile/
+
+GET /profile/
+
+Frontend behavior:
+
+Profile setup/edit screen
+
+Store user name locally for greeting UI
+
+Greeting card shown only if weekly improvement exists
+
+🧱 REQUIRED SCREENS
+1️⃣ Dashboard
+
+Greeting card (conditional)
+
+Current facial stats:
+
+Symmetry
+
+Jawline
+
+Proportions
+
+Skin Clarity
+
+Masculinity
+
+Cheekbones
+
+Data source: /scans/latest
+
+Placeholder values if no scan exists
+
+2️⃣ Scan Screen
+
+Camera UI placeholder
+
+Upload image → /scans/
+
+Show scan progress & result preview
+
+Disable scan if API says daily limit reached
+
+3️⃣ Daily Report Screen
+
+Show average scores from /analysis/daily
+
+Category-wise breakdown
+
+Clean card + progress bar UI
+
+4️⃣ Weekly Analysis Screen
+
+Use /analysis/weekly
+
+States:
+
+Locked
+
+Unlocked
+
+Display:
+
+Total scans
+
+Improvement since last week
+
+Consistency score (circular progress)
+
+5️⃣ Plans Screen
+
+Tabs:
+
+Morning Routine → /plans/today
+
+Weekly Evening Routine
+
+Generate → /plans/weekly/generate
+
+View → /plans/weekly/current
+
+6️⃣ Profile Screen
+
+Edit name, age, etc.
+
+Save via /profile/
+
+Fetch on app load
+
+🎨 UI / UX RULES
+
+Flutter (stable)
+
+Material 3
+
+Premium, fitness-app style
+
+Neutral dark/light theme
+
+No cartoon UI
+
+Bottom navigation:
+
+Home
+
+Scan
+
+Plans
+
+Profile
+
+⚙️ TECH CONSTRAINTS
+
+Flutter only
+
+Clean widget separation
+
+Use FutureBuilder / Provider / Riverpod for API state
+
+No mock logic
+
+No date manipulation
+
+No hard-coded limits
