@@ -2,7 +2,8 @@ import React, { useState } from "react";
 import { View, StyleSheet, TextInput, Alert, KeyboardAvoidingView, Platform, TouchableOpacity } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
-
+import * as WebBrowser from "expo-web-browser";
+import * as AuthSession from "expo-auth-session";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
@@ -12,6 +13,9 @@ import { Spacing, BorderRadius, wp } from "@/constants/theme";
 import { supabase } from "@/lib/supabase";
 import { api } from "@/lib/api";
 
+// For web browser to close properly after OAuth
+WebBrowser.maybeCompleteAuthSession();
+
 export default function LoginScreen() {
     const insets = useSafeAreaInsets();
     const { theme } = useTheme();
@@ -20,6 +24,7 @@ export default function LoginScreen() {
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [loading, setLoading] = useState(false);
+    const [oauthLoading, setOauthLoading] = useState(false);
 
     const handleLogin = async () => {
         if (!email || !password) {
@@ -44,35 +49,119 @@ export default function LoginScreen() {
         }
     };
 
-    // Auto-sync profile when session changes
+    // Auto-sync profile when session changes (non-blocking)
     React.useEffect(() => {
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
             if (event === 'SIGNED_IN' && session) {
-                try {
-                    console.log("Syncing profile with backend...");
-                    await api.syncProfile({
-                        name: session.user.user_metadata?.full_name,
-                        avatar_url: session.user.user_metadata?.avatar_url
-                    });
-                } catch (e) {
-                    console.error("Profile sync failed", e);
-                }
+                // Fire and forget - don't block the UI
+                const syncWithTimeout = async () => {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
+                    try {
+                        console.log("Syncing profile with backend (background)...");
+                        await api.syncProfile({
+                            name: session.user.user_metadata?.full_name,
+                            avatar_url: session.user.user_metadata?.avatar_url
+                        });
+                        console.log("Profile sync complete");
+                    } catch (e: any) {
+                        if (e.name === 'AbortError') {
+                            console.log("Profile sync timed out - will retry later");
+                        } else {
+                            console.error("Profile sync failed:", e.message);
+                        }
+                    } finally {
+                        clearTimeout(timeoutId);
+                    }
+                };
+
+                syncWithTimeout(); // Don't await - run in background
             }
         });
 
         return () => subscription.unsubscribe();
     }, []);
 
-    const handleOAuth = async (provider: 'google' | 'facebook') => {
-        // Trigger Supabase OAuth
-        const { error } = await supabase.auth.signInWithOAuth({
-            provider: provider,
-            options: {
-                redirectTo: 'exp://localhost:8081' // Adjust based on env
-            }
-        });
+    const handleGoogleSignIn = async () => {
+        try {
+            setOauthLoading(true);
 
-        if (error) Alert.alert("OAuth Error", error.message);
+            // Generate the proper redirect URL based on platform
+            const redirectUrl = AuthSession.makeRedirectUri({
+                scheme: 'lookmax',
+                path: 'auth/callback'
+            });
+
+            console.log("OAuth Redirect URL:", redirectUrl);
+
+            // Get the OAuth URL from Supabase
+            const { data, error } = await supabase.auth.signInWithOAuth({
+                provider: 'google',
+                options: {
+                    redirectTo: redirectUrl,
+                    skipBrowserRedirect: true, // We'll handle the redirect ourselves
+                }
+            });
+
+            if (error) {
+                Alert.alert("OAuth Error", error.message);
+                return;
+            }
+
+            if (!data.url) {
+                Alert.alert("OAuth Error", "Failed to get OAuth URL");
+                return;
+            }
+
+            // Open the OAuth URL in a browser
+            const result = await WebBrowser.openAuthSessionAsync(
+                data.url,
+                redirectUrl,
+                {
+                    showInRecents: true,
+                    preferEphemeralSession: false, // Keep session for better UX
+                }
+            );
+
+            console.log("OAuth Result:", result);
+
+            if (result.type === 'success' && result.url) {
+                // Extract tokens from the URL
+                const url = new URL(result.url);
+
+                // Handle fragment-based tokens (Supabase returns tokens in hash)
+                const hashParams = new URLSearchParams(url.hash.substring(1));
+                const accessToken = hashParams.get('access_token');
+                const refreshToken = hashParams.get('refresh_token');
+
+                if (accessToken && refreshToken) {
+                    // Set the session in Supabase
+                    const { error: sessionError } = await supabase.auth.setSession({
+                        access_token: accessToken,
+                        refresh_token: refreshToken,
+                    });
+
+                    if (sessionError) {
+                        console.error("Session Error:", sessionError);
+                        Alert.alert("Login Error", "Failed to complete sign in. Please try again.");
+                    }
+                    // Success! AuthContext will detect the session change
+                } else {
+                    console.error("No tokens found in URL:", result.url);
+                    Alert.alert("Login Error", "Authentication failed. Please try again.");
+                }
+            } else if (result.type === 'cancel') {
+                console.log("OAuth cancelled by user");
+            } else {
+                console.log("OAuth result:", result);
+            }
+        } catch (e: any) {
+            console.error("OAuth Exception:", e);
+            Alert.alert("OAuth Error", e.message || "An unexpected error occurred");
+        } finally {
+            setOauthLoading(false);
+        }
     };
 
     return (
@@ -134,13 +223,15 @@ export default function LoginScreen() {
                                 backgroundColor: '#FFFFFF',
                                 borderColor: '#DADCE0',
                                 borderWidth: 1,
-                                borderRadius: BorderRadius.full, // "Rounded corners" - pill shape looks best and is compliant
-                                elevation: 0, // Remove shadow if any, user said subtle border
-                                justifyContent: 'flex-start', // Align content start to allow absolute positioning of icon if needed, or center if using flex row
-                                paddingHorizontal: Spacing.sm, // Reset padding
+                                borderRadius: BorderRadius.full,
+                                elevation: 0,
+                                justifyContent: 'flex-start',
+                                paddingHorizontal: Spacing.sm,
+                                opacity: oauthLoading ? 0.6 : 1,
                             }
                         ]}
-                        onPress={() => handleOAuth('google')}
+                        onPress={handleGoogleSignIn}
+                        disabled={oauthLoading}
                         activeOpacity={0.7}
                     >
                         {/* Wrapper for Icon to ensure proper spacing/positioning */}
@@ -148,23 +239,17 @@ export default function LoginScreen() {
                             <GoogleLogo width={20} height={20} />
                         </View>
 
-                        {/* Text Centered relative to the remaining space or the whole button? 
-                            Google guidelines: "The text ... should be centered or left-aligned". 
-                            Commonly centered in the button area or next to icon.
-                            My socialBtn style has justifyContent: "center". 
-                            Let's override styles.socialBtn props if needed.
-                        */}
                         <ThemedText
                             type="body"
                             style={{
                                 color: '#3C4043',
                                 fontWeight: '500',
-                                flex: 1, // Take up remaining space
-                                textAlign: 'center', // Center text
-                                marginRight: Spacing.lg + 4 // Compensate for icon on left to center visual weight slightly, or just center.
+                                flex: 1,
+                                textAlign: 'center',
+                                marginRight: Spacing.lg + 4
                             }}
                         >
-                            Sign in with Google
+                            {oauthLoading ? "Signing in..." : "Sign in with Google"}
                         </ThemedText>
                     </TouchableOpacity>
                 </View>

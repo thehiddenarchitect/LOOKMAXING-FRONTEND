@@ -5,6 +5,7 @@ import MainTabNavigator from "@/navigation/MainTabNavigator";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 import LoginScreen from "@/screens/LoginScreen";
 import SignupScreen from "@/screens/SignupScreen";
+import ProfileCompletionScreen from "@/screens/ProfileCompletionScreen";
 import { useAuth } from "@/context/AuthContext";
 import { useData } from "@/context/DataContext";
 import { useTheme } from "@/hooks/useTheme";
@@ -13,6 +14,7 @@ export type RootStackParamList = {
   Main: undefined;
   Login: undefined;
   Signup: undefined;
+  ProfileCompletion: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -23,10 +25,17 @@ SplashScreen.preventAutoHideAsync();
 export default function RootStackNavigator() {
   const screenOptions = useScreenOptions();
   const { session, loading: authLoading } = useAuth();
-  const { isInitialized } = useData();
+  const { isInitialized, profile } = useData();
   const { theme } = useTheme();
 
   const isReady = !authLoading && (!session || isInitialized);
+
+  // Check if profile is complete (has required fields)
+  const isProfileComplete = profile &&
+    profile.name &&
+    profile.age &&
+    profile.height &&
+    profile.weight;
 
   useEffect(() => {
     if (isReady) {
@@ -41,12 +50,24 @@ export default function RootStackNavigator() {
   return (
     <Stack.Navigator screenOptions={screenOptions}>
       {session ? (
-        <Stack.Screen
-          name="Main"
-          component={MainTabNavigator}
-          options={{ headerShown: false }}
-        />
+        // User is authenticated
+        isProfileComplete ? (
+          // Profile is complete - show main app
+          <Stack.Screen
+            name="Main"
+            component={MainTabNavigator}
+            options={{ headerShown: false }}
+          />
+        ) : (
+          // Profile incomplete (likely OAuth user first time) - force profile completion
+          <Stack.Screen
+            name="ProfileCompletion"
+            component={ProfileCompletionScreen}
+            options={{ headerShown: false }}
+          />
+        )
       ) : (
+        // Not authenticated - show auth screens
         <>
           <Stack.Screen
             name="Login"

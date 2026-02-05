@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { View, StyleSheet, TextInput, Alert, TouchableOpacity, ScrollView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -12,26 +11,33 @@ import { supabase } from "@/lib/supabase";
 import { StorageService } from "@/lib/storage";
 import { api } from "@/lib/api";
 import { useData } from "@/context/DataContext";
+import { useAuth } from "@/context/AuthContext";
 
-const REGEX_EMAIL = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-const REGEX_PASSWORD = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)[A-Za-z\d]{8,}$/;
 const REGEX_NAME = /^[A-Za-z ]{2,30}$/;
 
-export default function SignupScreen() {
+/**
+ * ProfileCompletionScreen
+ * 
+ * This screen is shown to OAuth users (Google sign-in) who have authenticated
+ * but haven't completed their profile yet. It collects:
+ * - Personal info (name, age, gender) - Step 1
+ * - Body metrics (height, weight) - Step 2
+ * - Review & Save - Step 3
+ */
+export default function ProfileCompletionScreen() {
     const insets = useSafeAreaInsets();
     const { theme } = useTheme();
-    const navigation = useNavigation<any>();
-    const { updateProfile } = useData();
+    const { updateProfile, refreshData } = useData();
+    const { user } = useAuth();
 
     const [step, setStep] = useState(1);
     const [loading, setLoading] = useState(false);
 
-    // Form Data
-    const [email, setEmail] = useState("");
-    const [password, setPassword] = useState("");
-    const [confirmPassword, setConfirmPassword] = useState("");
+    // Pre-fill name from OAuth metadata if available
+    const oauthName = user?.user_metadata?.full_name || user?.user_metadata?.name || "";
 
-    const [name, setName] = useState("");
+    // Form Data
+    const [name, setName] = useState(oauthName);
     const [age, setAge] = useState("");
     const [gender, setGender] = useState<"male" | "female" | "prefer_not_to_say">("male");
 
@@ -40,28 +46,14 @@ export default function SignupScreen() {
 
     const [errors, setErrors] = useState<Record<string, string>>({});
 
-    // Validation Logic - Refactored to "Calm" mode (onBlur)
+    // Update name if OAuth data loads later
+    useEffect(() => {
+        if (oauthName && !name) {
+            setName(oauthName);
+        }
+    }, [oauthName]);
 
-    const validateEmail = (val: string) => {
-        if (!val) return null; // Don't show error if empty, just wait
-        if (val.includes(' ')) return "Email must not contain spaces";
-        if (!REGEX_EMAIL.test(val)) return "Invalid email address";
-        return null;
-    };
-
-    const validatePassword = (val: string) => {
-        if (!val) return null;
-        if (val.includes(' ')) return "No spaces allowed";
-        if (!REGEX_PASSWORD.test(val)) return "Minimum 8 characters, including 1 uppercase letter and 1 number.";
-        return null;
-    };
-
-    const validateConfirmPassword = (val: string, original: string) => {
-        if (!val) return null;
-        if (val !== original) return "Passwords do not match";
-        return null;
-    };
-
+    // Validation Logic
     const validateName = (val: string) => {
         if (!val) return null;
         if (!REGEX_NAME.test(val)) return "Only alphabets & spaces, 2-30 chars";
@@ -95,15 +87,6 @@ export default function SignupScreen() {
     const handleBlur = (field: string) => {
         let error = null;
         switch (field) {
-            case 'email':
-                error = validateEmail(email);
-                break;
-            case 'password':
-                error = validatePassword(password);
-                break;
-            case 'confirmPassword':
-                error = validateConfirmPassword(confirmPassword, password);
-                break;
             case 'name':
                 error = validateName(name);
                 break;
@@ -129,8 +112,6 @@ export default function SignupScreen() {
         });
     };
 
-
-
     const calculateBMI = () => {
         const h = parseFloat(height);
         const w = parseFloat(weight);
@@ -147,22 +128,6 @@ export default function SignupScreen() {
         let currentErrors: Record<string, string> = {};
 
         if (step === 1) {
-            const e1 = validateEmail(email); if (e1) currentErrors.email = e1;
-            const e2 = validatePassword(password); if (e2) currentErrors.password = e2;
-            const e3 = validateConfirmPassword(confirmPassword, password); if (e3) currentErrors.confirmPassword = e3;
-
-            if (Object.keys(currentErrors).length > 0 || !email || !password || !confirmPassword) {
-                setErrors(prev => ({ ...prev, ...currentErrors }));
-                if (Object.keys(currentErrors).length > 0) return; // Stop if explicit errors
-            }
-            // Ensure all fields filled
-            if (!email || !password || !confirmPassword) {
-                Alert.alert("Missing Fields", "Please fill in all fields.");
-                return;
-            }
-
-            setStep(2);
-        } else if (step === 2) {
             const e1 = validateName(name); if (e1) currentErrors.name = e1;
             const e2 = validateAge(age); if (e2) currentErrors.age = e2;
 
@@ -175,8 +140,8 @@ export default function SignupScreen() {
                 return;
             }
 
-            setStep(3);
-        } else if (step === 3) {
+            setStep(2);
+        } else if (step === 2) {
             const e1 = validateHeight(height); if (e1) currentErrors.height = e1;
             const e2 = validateWeight(weight); if (e2) currentErrors.weight = e2;
 
@@ -189,18 +154,15 @@ export default function SignupScreen() {
                 return;
             }
 
-            setStep(4);
+            setStep(3);
         }
     };
 
-    const handleSignup = async () => {
+    const handleComplete = async () => {
         // Final full validation
         const errs: Record<string, string> = {};
         const addErr = (field: string, msg: string | null) => { if (msg) errs[field] = msg; };
 
-        addErr('email', validateEmail(email));
-        addErr('password', validatePassword(password));
-        addErr('confirmPassword', validateConfirmPassword(confirmPassword, password));
         addErr('name', validateName(name));
         addErr('age', validateAge(age));
         addErr('height', validateHeight(height));
@@ -208,36 +170,17 @@ export default function SignupScreen() {
 
         if (Object.keys(errs).length > 0) {
             setErrors(errs);
-            Alert.alert("Validation Error", "Please correct the errors before signing up.");
+            Alert.alert("Validation Error", "Please correct the errors before continuing.");
             return;
         }
 
-        if (!email || !password || !name || !age || !height || !weight) {
+        if (!name || !age || !height || !weight) {
             Alert.alert("Missing Fields", "Please ensure all details are filled.");
             return;
         }
 
         setLoading(true);
         try {
-            await api.signUp({
-                email,
-                password,
-                name,
-                age: parseInt(age, 10),
-                gender,
-                height: parseInt(height, 10), // Ensure int
-                weight: parseInt(weight, 10) // Ensure int
-            });
-
-            const { error } = await supabase.auth.signInWithPassword({
-                email,
-                password
-            });
-
-            if (error) throw error;
-
-            // Optimistic Update: Save to local storage now that we have a session
-            // This ensures the Profile screen shows data immediately
             const newProfile = {
                 name,
                 age: parseInt(age, 10),
@@ -246,35 +189,28 @@ export default function SignupScreen() {
                 weight: parseInt(weight, 10)
             };
 
-            // Explicitly await storage save to ensure data is ready for the Main stack
+            // Try to save to backend (non-blocking, can fail)
+            try {
+                await api.saveProfile(newProfile);
+                console.log("Profile saved to backend successfully");
+            } catch (backendError: any) {
+                // Backend might fail but we can still proceed with local storage
+                console.warn("Backend profile save failed (will retry later):", backendError.message);
+            }
+
+            // Always save to local storage - this is what the app uses
             await StorageService.saveProfile(newProfile);
+            console.log("Profile saved to local storage");
+
+            // Update context (this will trigger navigation change to Main)
             updateProfile(newProfile);
 
+            // Refresh data to ensure profile is loaded
+            await refreshData();
+
         } catch (e: any) {
-            if (e.message && (e.message.includes("registered") || e.message.includes("exists"))) {
-                // Auto-login fallback
-                const newProfile = {
-                    name,
-                    age: parseInt(age, 10),
-                    gender,
-                    height: parseInt(height, 10),
-                    weight: parseInt(weight, 10)
-                };
-                updateProfile(newProfile);
-
-                const { error: loginError } = await supabase.auth.signInWithPassword({
-                    email,
-                    password
-                });
-
-                if (loginError) {
-                    Alert.alert("Account Exists", "This email is already registered. Please login.", [
-                        { text: "Go to Login", onPress: () => navigation.navigate("Login") }
-                    ]);
-                }
-            } else {
-                Alert.alert("Signup Failed", e.message);
-            }
+            console.error("Profile completion error:", e);
+            Alert.alert("Error", e.message || "Failed to save profile. Please try again.");
         } finally {
             setLoading(false);
         }
@@ -293,56 +229,9 @@ export default function SignupScreen() {
 
     const renderStep1 = () => (
         <View>
-            <ThemedText type="h2" style={{ marginBottom: Spacing.xl }}>Create Account</ThemedText>
-
-            <View style={styles.inputGroup}>
-                <ThemedText type="label" style={{ color: theme.textSecondary, marginBottom: Spacing.xs }}>Email</ThemedText>
-                <TextInput
-                    style={[styles.input, { backgroundColor: theme.backgroundSecondary, color: theme.text, borderColor: errors.email ? theme.error : theme.border }]}
-                    placeholder="Enter email"
-                    placeholderTextColor={theme.textSecondary}
-                    value={email}
-                    onChangeText={setEmail}
-                    onBlur={() => handleBlur('email')}
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                />
-                {renderInputError("email")}
-            </View>
-            <View style={styles.inputGroup}>
-                <ThemedText type="label" style={{ color: theme.textSecondary, marginBottom: Spacing.xs }}>Password</ThemedText>
-                <TextInput
-                    style={[styles.input, { backgroundColor: theme.backgroundSecondary, color: theme.text, borderColor: errors.password ? theme.error : theme.border }]}
-                    placeholder="Enter password"
-                    placeholderTextColor={theme.textSecondary}
-                    value={password}
-                    onChangeText={setPassword}
-                    onBlur={() => handleBlur('password')}
-                    secureTextEntry
-                />
-                {renderInputError("password")}
-            </View>
-            <View style={styles.inputGroup}>
-                <ThemedText type="label" style={{ color: theme.textSecondary, marginBottom: Spacing.xs }}>Confirm Password</ThemedText>
-                <TextInput
-                    style={[styles.input, { backgroundColor: theme.backgroundSecondary, color: theme.text, borderColor: errors.confirmPassword ? theme.error : theme.border }]}
-                    placeholder="Confirm password"
-                    placeholderTextColor={theme.textSecondary}
-                    value={confirmPassword}
-                    onChangeText={setConfirmPassword}
-                    onBlur={() => handleBlur('confirmPassword')}
-                    secureTextEntry
-                />
-                {renderInputError("confirmPassword")}
-            </View>
-        </View>
-    );
-
-    const renderStep2 = () => (
-        <View>
-            <ThemedText type="h2" style={{ marginBottom: Spacing.sm }}>Personal Info</ThemedText>
+            <ThemedText type="h2" style={{ marginBottom: Spacing.sm }}>Complete Your Profile</ThemedText>
             <ThemedText type="body" style={{ color: theme.textSecondary, marginBottom: Spacing.xl }}>
-                Used to personalize analysis and recommendations.
+                Let's personalize your experience with a few details.
             </ThemedText>
 
             <View style={styles.inputGroup}>
@@ -394,11 +283,11 @@ export default function SignupScreen() {
         </View>
     );
 
-    const renderStep3 = () => (
+    const renderStep2 = () => (
         <View>
             <ThemedText type="h2" style={{ marginBottom: Spacing.sm }}>Body Metrics</ThemedText>
             <ThemedText type="body" style={{ color: theme.textSecondary, marginBottom: Spacing.xl }}>
-                These values are used to calculate BMI and improve accuracy.
+                These values help us provide accurate analysis.
             </ThemedText>
 
             <View style={styles.row}>
@@ -439,9 +328,9 @@ export default function SignupScreen() {
         </View>
     );
 
-    const renderStep4 = () => (
+    const renderStep3 = () => (
         <View>
-            <ThemedText type="h2" style={{ marginBottom: Spacing.sm }}>Almost Done</ThemedText>
+            <ThemedText type="h2" style={{ marginBottom: Spacing.sm }}>All Set!</ThemedText>
             <ThemedText type="body" style={{ color: theme.textSecondary, marginBottom: Spacing.xl }}>
                 Review your details to start your transformation.
             </ThemedText>
@@ -452,8 +341,12 @@ export default function SignupScreen() {
                     <ThemedText type="body">{name}</ThemedText>
                 </View>
                 <View style={styles.previewRow}>
-                    <ThemedText type="body" style={{ color: theme.textSecondary }}>Email</ThemedText>
-                    <ThemedText type="body">{email}</ThemedText>
+                    <ThemedText type="body" style={{ color: theme.textSecondary }}>Age</ThemedText>
+                    <ThemedText type="body">{age}</ThemedText>
+                </View>
+                <View style={styles.previewRow}>
+                    <ThemedText type="body" style={{ color: theme.textSecondary }}>Gender</ThemedText>
+                    <ThemedText type="body">{gender === "prefer_not_to_say" ? "Not specified" : gender}</ThemedText>
                 </View>
                 <View style={styles.previewRow}>
                     <ThemedText type="body" style={{ color: theme.textSecondary }}>Height</ThemedText>
@@ -471,16 +364,14 @@ export default function SignupScreen() {
         </View>
     );
 
-    // Disable logic - Just check if empty, strict validation happens on Next/Blur
-    const isNextDisabled = false; // Always enabled to allow validation feedback on press
-
+    const totalSteps = 3;
 
     return (
         <ScrollView
             style={{ flex: 1, backgroundColor: theme.backgroundRoot }}
             contentContainerStyle={{
                 flexGrow: 1,
-                paddingTop: Spacing.xl,
+                paddingTop: insets.top + Spacing.xl,
                 paddingBottom: insets.bottom + Spacing.xl,
                 paddingHorizontal: Spacing.lg,
             }}
@@ -488,10 +379,10 @@ export default function SignupScreen() {
             {/* Progress */}
             <View style={styles.progressContainer}>
                 <View style={[styles.progressBar, { backgroundColor: theme.backgroundTertiary }]}>
-                    <View style={[styles.progressFill, { backgroundColor: theme.primary, width: `${(step / 4) * 100}%` }]} />
+                    <View style={[styles.progressFill, { backgroundColor: theme.primary, width: `${(step / totalSteps) * 100}%` }]} />
                 </View>
                 <ThemedText type="label" style={{ color: theme.textSecondary, marginTop: Spacing.sm, textAlign: 'right' }}>
-                    Step {step} of 4
+                    Step {step} of {totalSteps}
                 </ThemedText>
             </View>
 
@@ -499,7 +390,6 @@ export default function SignupScreen() {
                 {step === 1 && renderStep1()}
                 {step === 2 && renderStep2()}
                 {step === 3 && renderStep3()}
-                {step === 4 && renderStep4()}
             </View>
 
             <View style={styles.footer}>
@@ -510,27 +400,13 @@ export default function SignupScreen() {
                 )}
 
                 <Button
-                    onPress={step === 4 ? handleSignup : handleNext}
-                    disabled={loading || isNextDisabled} // Strict disable
-                    style={{ flex: 1, opacity: (loading || isNextDisabled) ? 0.5 : 1 }}
+                    onPress={step === totalSteps ? handleComplete : handleNext}
+                    disabled={loading}
+                    style={{ flex: 1, opacity: loading ? 0.5 : 1 }}
                 >
-                    {loading ? "Creating Account..." : step === 4 ? "Complete Signup" : "Next"}
+                    {loading ? "Saving..." : step === totalSteps ? "Let's Go!" : "Next"}
                 </Button>
             </View>
-
-            {step === 1 && (
-                <View style={{ flexDirection: "row", justifyContent: "center", marginTop: Spacing.xl }}>
-                    <ThemedText type="body" style={{ color: theme.textSecondary }}>
-                        Already have an account?{" "}
-                    </ThemedText>
-                    <TouchableOpacity onPress={() => navigation.navigate("Login")}>
-                        <ThemedText type="body" style={{ color: theme.primary, fontWeight: "600" }}>
-                            Login
-                        </ThemedText>
-                    </TouchableOpacity>
-                </View>
-            )}
-
         </ScrollView>
     );
 }

@@ -189,13 +189,13 @@ export default function ProfileScreen() {
 
   const handleClearData = async () => {
     if (Platform.OS === 'web') {
-      if (window.confirm("This will permanently delete your scan history from this device.\nClearing history may affect future analysis and next week’s results.\nThis action cannot be undone.")) {
+      if (window.confirm("Are you sure you want to reset your scan history? Profile and usage limits will be kept.")) {
         await performResetHistory();
       }
     } else {
       Alert.alert(
-        "Clear Data Warning ⚠️",
-        "This will permanently delete your scan history from this device.\nClearing history may affect future analysis and next week’s results.\nThis action cannot be undone.",
+        "Reset History",
+        "Are you sure you want to reset your scan history? Profile and usage limits will be kept.",
         [
           { text: "Cancel", style: "cancel" },
           {
@@ -277,9 +277,15 @@ export default function ProfileScreen() {
             <Feather name="camera" size={wp('3.5%')} color="#FFFFFF" />
           </View>
         </Pressable>
-        <ThemedText type="h2" style={{ marginBottom: Spacing.xs }}>
-          {localProfile.name || "User"}
-        </ThemedText>
+        <View style={{ width: '100%', alignItems: 'center', marginBottom: Spacing.xs }}>
+          <ThemedText
+            type="h2"
+            style={{ textAlign: 'center' }}
+            numberOfLines={1}
+          >
+            {profile?.name || "User"}
+          </ThemedText>
+        </View>
         <ThemedText type="body" style={{ color: theme.textSecondary }}>
           LookMax Member
         </ThemedText>

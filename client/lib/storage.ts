@@ -6,6 +6,15 @@ const KEYS = {
   PROFILE: "lookmax_profile",
   DAILY_TIPS_COMPLETED: "lookmax_daily_tips",
   CHALLENGES_COMPLETED: "lookmax_challenges",
+  DAILY_USAGE: "lookmax_daily_usage",
+  LIFETIME_STATS: "lookmax_lifetime_stats",
+  SCANS: "lookmax_scans",
+};
+
+const getUserKey = async (baseKey: string): Promise<string | null> => {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user?.id) return null;
+  return `${baseKey}_${session.user.id}`;
 };
 
 export interface UserProfile {
@@ -65,11 +74,14 @@ export const StorageService = {
   async getProfile(): Promise<UserProfile | null> {
     try {
       // 1. Try Local Storage
-      const data = await AsyncStorage.getItem(KEYS.PROFILE);
-      if (data) {
-        const parsed = JSON.parse(data);
-        if (parsed && parsed.name) {
-          return parsed;
+      const key = await getUserKey(KEYS.PROFILE);
+      if (key) {
+        const data = await AsyncStorage.getItem(key);
+        if (data) {
+          const parsed = JSON.parse(data);
+          if (parsed && parsed.name) {
+            return parsed;
+          }
         }
       }
 
@@ -87,12 +99,15 @@ export const StorageService = {
             name: profile.name || "User",
             age: profile.age || 0,
             gender: profile.gender || "male",
-            height: profile.height_cm,
-            weight: profile.weight_kg,
-            avatarUri: undefined // Avatar URL if stored in DB
+            height: profile.height_cm ?? profile.height, // Handle both potential column names
+            weight: profile.weight_kg ?? profile.weight,
+            avatarUri: undefined
           };
-          // Save for next time
-          await this.saveProfile(userProfile);
+          // Save locally only (fetch came from DB, no need to sync back)
+          const key = await getUserKey(KEYS.PROFILE);
+          if (key) {
+            await AsyncStorage.setItem(key, JSON.stringify(userProfile));
+          }
           return userProfile;
         }
       }
@@ -104,7 +119,10 @@ export const StorageService = {
   },
 
   async saveProfile(profile: UserProfile): Promise<void> {
-    await AsyncStorage.setItem(KEYS.PROFILE, JSON.stringify(profile));
+    const key = await getUserKey(KEYS.PROFILE);
+    if (key) {
+      await AsyncStorage.setItem(key, JSON.stringify(profile));
+    }
     try {
       await api.saveProfile(profile);
     } catch (e) {
@@ -113,52 +131,54 @@ export const StorageService = {
   },
 
   async clearAll(): Promise<void> {
-    await AsyncStorage.multiRemove([
-      KEYS.PROFILE,
-      KEYS.DAILY_TIPS_COMPLETED,
-      KEYS.CHALLENGES_COMPLETED,
-      "lookmax_daily_usage",
-      "lookmax_lifetime_stats"
-    ]);
+    const tKey = await getUserKey(KEYS.DAILY_TIPS_COMPLETED);
+    const cKey = await getUserKey(KEYS.CHALLENGES_COMPLETED);
+    const uKey = await getUserKey(KEYS.DAILY_USAGE);
+    const lKey = await getUserKey(KEYS.LIFETIME_STATS);
+    const sKey = await getUserKey(KEYS.SCANS);
+
+    const keysToRemove = [tKey, cKey, uKey, lKey, sKey].filter(Boolean) as string[];
+
+    if (keysToRemove.length > 0) {
+      await AsyncStorage.multiRemove(keysToRemove);
+    }
     await api.resetData();
   },
 
   async clearHistoryOnly(): Promise<void> {
-    await AsyncStorage.multiRemove([
-      KEYS.DAILY_TIPS_COMPLETED,
-      KEYS.CHALLENGES_COMPLETED
-    ]);
+    const tKey = await getUserKey(KEYS.DAILY_TIPS_COMPLETED);
+    const cKey = await getUserKey(KEYS.CHALLENGES_COMPLETED);
+    const keysToRemove = [tKey, cKey].filter(Boolean) as string[];
+
+    if (keysToRemove.length > 0) {
+      await AsyncStorage.multiRemove(keysToRemove);
+    }
     await api.resetScanHistory();
   },
 
   async getScans(): Promise<ScanRecord[]> {
     try {
-      const { scans } = await api.getHistory(50);
-      return scans.map((s) => ({
-        id: s.id,
-        date: s.created_at,
-        // We don't get the image back from API in this simple version
-        stats: {
-          symmetry: s.metrics.symmetry,
-          jawline: s.metrics.jawline,
-          proportions: s.metrics.proportions,
-          skinClarity: s.metrics.skin_clarity,
-          masculinity: s.metrics.masculinity,
-          cheekbones: s.metrics.cheekbones || 0,
-          overall: s.overall_score,
-        },
-        lifestyle: { sleep: 0, water: 0, diet: "", exercise: "" },
-      }));
+      const key = await getUserKey(KEYS.SCANS);
+      if (!key) return [];
+      const data = await AsyncStorage.getItem(key);
+      if (!data) return [];
+      return JSON.parse(data);
     } catch (e) {
-      console.error("Failed to get scans", e);
+      console.error("Failed to get local scans", e);
       return [];
     }
   },
 
   async addScan(scan: ScanRecord): Promise<void> {
-    // This is now handled by uploadScan mainly, but for compatibility
-    if (scan.imageUri) {
-      await api.uploadScan(scan.imageUri);
+    try {
+      const scans = await this.getScans();
+      const newScans = [scan, ...scans];
+      const key = await getUserKey(KEYS.SCANS);
+      if (key) {
+        await AsyncStorage.setItem(key, JSON.stringify(newScans));
+      }
+    } catch (e) {
+      console.warn("Failed to save scan locally", e);
     }
   },
 
@@ -206,7 +226,9 @@ export const StorageService = {
 
   async getCompletedTipsToday(): Promise<string[]> {
     try {
-      const data = await AsyncStorage.getItem(KEYS.DAILY_TIPS_COMPLETED);
+      const key = await getUserKey(KEYS.DAILY_TIPS_COMPLETED);
+      if (!key) return [];
+      const data = await AsyncStorage.getItem(key);
       if (!data) return [];
       const parsed = JSON.parse(data);
       const today = new Date().toDateString();
@@ -226,10 +248,14 @@ export const StorageService = {
     } else {
       newCompleted = [...completed, tipId];
     }
-    await AsyncStorage.setItem(
-      KEYS.DAILY_TIPS_COMPLETED,
-      JSON.stringify({ date: today, completed: newCompleted })
-    );
+
+    const key = await getUserKey(KEYS.DAILY_TIPS_COMPLETED);
+    if (key) {
+      await AsyncStorage.setItem(
+        key,
+        JSON.stringify({ date: today, completed: newCompleted })
+      );
+    }
     return newCompleted;
   },
 
@@ -283,7 +309,9 @@ export const StorageService = {
 
   async getDailyUsageCount(): Promise<number> {
     try {
-      const data = await AsyncStorage.getItem("lookmax_daily_usage");
+      const key = await getUserKey(KEYS.DAILY_USAGE);
+      if (!key) return 0;
+      const data = await AsyncStorage.getItem(key);
       if (!data) return 0;
       const { date, count } = JSON.parse(data);
       if (date === new Date().toDateString()) {
@@ -298,17 +326,22 @@ export const StorageService = {
   async incrementDailyUsage(): Promise<number> {
     const current = await this.getDailyUsageCount();
     const newCount = current + 1;
-    await AsyncStorage.setItem("lookmax_daily_usage", JSON.stringify({
-      date: new Date().toDateString(),
-      count: newCount,
-      lastScanTime: Date.now() // Also track time
-    }));
+    const key = await getUserKey(KEYS.DAILY_USAGE);
+    if (key) {
+      await AsyncStorage.setItem(key, JSON.stringify({
+        date: new Date().toDateString(),
+        count: newCount,
+        lastScanTime: Date.now() // Also track time
+      }));
+    }
     return newCount;
   },
 
   async getLastScanTimestamp(): Promise<number | null> {
     try {
-      const data = await AsyncStorage.getItem("lookmax_daily_usage");
+      const key = await getUserKey(KEYS.DAILY_USAGE);
+      if (!key) return null;
+      const data = await AsyncStorage.getItem(key);
       if (!data) return null;
       const { lastScanTime } = JSON.parse(data);
       return lastScanTime || null;
@@ -319,7 +352,9 @@ export const StorageService = {
 
   async getLifetimeStats(): Promise<{ totalScans: number, daysActive: number, lastScanDate: string }> {
     try {
-      const data = await AsyncStorage.getItem("lookmax_lifetime_stats");
+      const key = await getUserKey(KEYS.LIFETIME_STATS);
+      if (!key) return { totalScans: 0, daysActive: 0, lastScanDate: "Never" };
+      const data = await AsyncStorage.getItem(key);
       if (!data) return { totalScans: 0, daysActive: 0, lastScanDate: "Never" };
       return JSON.parse(data);
     } catch {
@@ -333,13 +368,6 @@ export const StorageService = {
     // Check if new day for 'daysActive'
     // This is simple approximation: check if lastScanDate !== today
     const today = new Date().toLocaleDateString();
-    const isNewDay = current.lastScanDate !== today && current.lastScanDate !== "Never";
-    // If it's "Never" it is the first day, so it counts as 1 day active.
-
-    // Actually, 'daysActive' logic: set of unique days.
-    // We can't store set easily in JSON without full history which we want to avoid for lightweight persistence.
-    // Approximation: Store Set of date strings if we want accuracy OR just increment if lastScanDate != today.
-    // Let's stick to simple increment if date changed. (User wants persistent count).
 
     let daysActive = current.daysActive;
     if (current.lastScanDate !== today) {
@@ -352,7 +380,10 @@ export const StorageService = {
       lastScanDate: today
     };
 
-    await AsyncStorage.setItem("lookmax_lifetime_stats", JSON.stringify(updated));
+    const key = await getUserKey(KEYS.LIFETIME_STATS);
+    if (key) {
+      await AsyncStorage.setItem(key, JSON.stringify(updated));
+    }
   },
 };
 

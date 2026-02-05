@@ -185,11 +185,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
         // Update persistent lifetime stats
         try {
+            await StorageService.addScan(newScan); // Save scan locally
             await StorageService.updateLifetimeStats(newScan.date);
             const newStats = await StorageService.getLifetimeStats();
             setLifetimeStats(newStats);
         } catch (e) {
-            console.error("Failed to update lifetime stats", e);
+            console.error("Failed to update lifetime stats or save scan", e);
         }
     }, []);
 
